@@ -1,120 +1,105 @@
-# Milestone 2: Object Recognition and Localisation
+# Milestone 3: Navigation and Planning
 - [Introduction](#introduction)
-- [Supporting scripts](#supporting-scripts)
-- [Data collection (Week 5)](#step-1-data-collection-week-5)
-- [Training the detector (Week 5)](#step-2-training-your-yolo-model-week-5)
-- [Estimating the target poses (Week 6)](#step-3-estimating-target-poses-week-6)
+- [Waypoint navigation (Week 8)](#waypoint-navigation-week-8)
+- Path planning
+	- [with a known map (Week 9)](#path-planning-with-a-known-map-week-9)
+	- [with a known map without obstacle information (Week 9)](#path-planning-with-a-partially-known-map-week-9)
+    - [with a known map without obstacle or target information (Week 9)](#path-planning-with-a-minimal-map-week-9)
+- Evaluation and marking: see [M3 marking instructions](M3_marking.md)
+
+**Please note that all skeleton codes provided are **for references only** and are intended to get you started. They are not guaranteed to be bug-free either. To get better performance please make changes or write your own codes and test cases. As long as your codes perform the task and generate estimation maps that can be marked according to the evaluation schemes and scripts you are free to modify the skeleton codes.**
 
 ---
+
 ## Introduction
-In M2, your PenguinPi robot will learn to recognise different types of fruit and veg via its camera. It will also estimate where these objects are located in the supermarket (arena) based on the actual size of the object, the size of the bounding box of the observed object in its camera view, and its own location at the time of observation using SLAM (M1). 
+In M3 you will implement the grocery shopping module for the robot. PenguinPi will be given a shopping list and it will need to navigate to the listed fruits&vegs in the supermarket.
 
-There are 8 possible types of fruits and vegs for the classification model to recognise from, namely orange, lemon, pear, tomato, capsicum, potato, pumpkin, and garlic. These fruits and veg will be in the 2.4m x 2.4m arena in addition to the 10 ARUCO markers. There may be duplicate objects from the same type, or types of object not appearing in the arena, e.g., 2 oranges, 2 lemon, 1 pear, 1 tomato, 2 capsicum, 1 pumpkin, 1 garlic (no potato). The arena may have other coloured target fruits/veg (ie. different coloured capsicum), or items that are not part of the original package of fruits / vegs. 
+In the arena, there will be 10 ArUco markers and 10 fruits&vegs. The shopping list will contain 5 of the 10 fruits&vegs present in the arena. The remaining 5 fruits&vegs are considered obstacles. **The 5 targets will be of unique types and there will be only one of each target fruit&vegs in the arena.** There may be more than one of a type of fruit/veg as obstacles. 
+For example, in an arena containing 1 lemon, 1 pear, 1 garlic, 1 pumpkin, 1 tomato, 1 capsicum, 2 potatoes, 2 oranges, your robot's given shopping list may be "garlic, lemon, pear, tomato, pumpkin", with the capsicum, potatoes, and oranges as the obstacle. As there are duplicates of oranges and potatoes, the shopping list won't contain potatoes or oranges.
 
-The fruits and vegs will stand upstraight as shown in the photo when placed in the arena, e.g., the garlic won't be lying on its side.
+[EDIT] For clarity, fruits and veg that are not part of the shopping list (ie. non-target fruits) will only be extracted from M2's list of fruits/veg. That means you would have trained on all the fruits/veg already from M2.
 
-![target mugshot](Screenshots/TargetMugshot.jpg)
+Since M3 focuses on testing your navigation and planning algorithms, we provide you with the groundtruth map of the arena. The repo contains an example practice arena and different marking arenas will be set up for M3 live demo marking and their true maps will be provided to you at the start of each M3 marking lab. You can either perform M3 with this fully known map, a mostly known map, or with a partially known map if you are up for a challenge: 
+- Full map: containing groundtruth locations of all 10 ArUco markers and all 10 fruits&vegs in the arena
+- Partial map: containing groundtruth locations of all 10 ArUco markers, as well as locations of the 5 target fruits&vegs on PenguinPi's shopping list. The remaining 5 fruits&vegs will be considered as obstacles with unknown locations that your navigation and planning algorithm needs to handle.
+- Minimal map: only contains groundtruth locations of all 10 ArUco markers. There will be 5 target fruits&vegs, and you can pick them up in any order and 5 obstacle fruits&veg. The system will be fully autonomous.
 
-In Week 5, you will collect and annotate image data to train a fruit&veg classifier using [the YOLOV8 model](https://github.com/ultralytics/ultralytics). Make sure you take enough photos of the fruit and veg models during your Week 5 lab session so that you can work on data annotation and model training outside of the lab. You will also measure the fruit and veg models to get their groundtruth dimensions, which will be used for estimating their location in Week 6.
+### M3 task
+Given a shopping list of 5 fruits&vegs, the robot's task is to autonomously navigate to the given list of target fruits&vegs in the specified order unless you pick level 4, while avoiding obstacles (ArUco marker blocks and non-target fruits&vegs) along the way. The **entire** robot needs to intentionally stop within a **0.25m radius** of a target for **2 seconds** (timing does not need to be exact, as long as the robot stops) before continuing its navigation to qualify as successfully navigated to that target. 
 
-In Week 6, you will complete codes to estimate the location of detected objects and generate a map of the estimated locations of the fruits and vegs in the arena by driving your robot around the arena, making use of your trained fruit&veg classifier, as well as your C1 and M1 codes. 
+To achieve the M3 task, this grocery shopping module can be divided into 4 components. These components build on top of each other, so we highly recommend you to complete these components in the following order:
 
-Your M2 will be marked based on the accuracy of your fruit&veg classifier on a set of testing photos, as well as the performance of the generated object location map during a live demo. Please see the [M2 marking instructions](M2_marking.md) for detailed info.
+1. [Level 1: Waypoint navigation](#waypoint-navigation-week-8)
+2. [Level 2: Path planning (known map)](#path-planning-with-a-known-map-week-9)
+3. [Level 3: Path planning (partial map)](#path-planning-with-a-partially-known-map-week-9)
+4. [Level 4: Path planning (minimal map)](#path-planning-with-a-minimal-map-week-9)
 
-![M2 GUI](Screenshots/M2_GUI.png)
+### Skeleton code
+[auto_fruit_search.py](auto_fruit_search.py) is provided to you as a skeleton code to get you started. It requires the [utility scripts](../Week00-01/util) from C1 and the wheel and camera [calibration parameters](../Week02-04/calibration/param/) to run. 
+
+Please note that this skeleton code is only a general guide, you can (and we highly recommend you do) rewrite the whole script if you want. You may also submit multiple scripts/variants of this code for the different marking levels you wish to attempt as described in the [marking scheme](M3_marking.md#evaulation).
+
+**Important notes:**
+- There is a 5pt penalty for every marker, object, or arena boundary that the robot collides into. A run with 5 penalties will be terminated whilst the timer continues. Make sure your implementation handles collision avoidance and the planned paths are within the arena boundaries.
+- The groundtruth maps are provided to you for M3 ONLY (you may choose not use it). Please be aware that in future assessments you will need to generate your own map estimated using your M1&M2 implementation.
+- There are three reference maps provided **for a practice arena** (different maps will be used during marking):
+	1. [M3_prac_map_full.txt](M3_prac_map_full.txt) - contains 10 fruits&vegs + 10 markers, it is used for 
+		- setting up the arena
+		- the true map input for Level 1 and Level 2 (refer to [marking scheme](#marking-schemes) for the level definitions)	
+	2. [M3_prac_map_part.txt](M3_prac_map_part.txt) - contains 5 target fruits&vegs + 10 markers, it is used for 
+		- the true map input for Level 3 (refer to [marking scheme](#marking-schemes) for the level definitions)
+    3. [M3_prac_map_min.txt](M3_prac_map_min.txt) - contains  10 markers, it is used for 
+		- the true map input for Level 4 (refer to [marking scheme](#marking-schemes) for the level definitions)
+- In addition to the groundtruth map for the practice arena, the [M3_prac_shopping_list.txt](M3_prac_shopping_list.txt) is also provided to you.
+- Below is a preview of the practice arena and the order of targets the robot needs to navigate to.
 
 
-Keyboard commands related to running M2 (```python operate.py```). Inside the GUI:
-- press arrow keys and space for driving the robot (C1)
-- press ENTER to run SLAM, ```s``` to save the SLAM map at any time (M1)
-- press ```i``` to take a picture (for collecting training data, saved under the ```pibot_dataset``` folder, doesn't require a trained YOLO model)
-- press ```p``` to run the trained YOLO object detector (bounding box visualised in bottom left view)
-- press ```n``` to save the robot's current pose estimated by SLAM (appending to "lab_output/image.txt") and the corresponding observation image (as "lab_output/pred_*.png")
-- after running operate.py to gather the set of observations and their matching robot pose and the SLAM map, run TargetPoseEst.py in a new terminal to generate targets.txt (map of objects) from these observations.
-
----
-## Supporting scripts
-- [operate.py](operate.py) is the central control program that combines keyboard teleoperation (C1), SLAM (M1), and object recognitions (M2). **You need to copy over the [utility scripts](../Week00-01/util) and the [GUI pics](../Week00-01/pics) from C1, and the [calibration parameters](../Week02-04/calibration/param/) and [SLAM scripts](../Week02-04/slam/) from M1 to run it.** In addition, it calls for the object detector that you will develop in M2.
-- [YOLO](YOLO/) is an example trained YOLO detector, which can sort of recognise garlic, pumpkin, and orange. You'll need to [train your own YOLO detector](#step-2-training-your-yolo-model-week-5) to recognises all target types with better accuracy.
-- [lab_output](lab_output/) contains example outputs when running M2, including [images.txt](lab_output/images.txt) matching each image observation "pred_*.png" with the robot's pose estimated by SLAM when that image was taken, and [targets.txt](lab_output/targets.txt) which is the estimated map of the objects generated by [TargetPoseEst.py](TargetPoseEst.py)
-- [image background randomiser](image_background_randomiser/) is an optional tool for you to create training images with randomised backgrounds
-- [TargetPoseEst.py](TargetPoseEst.py) is the script that you'll need to modify to generate estimated target location map in [week 5](#step-3-estimating-target-poses-week-5)
-
-
----
-## Step 1: Data collection (week 5)
-In addition to collecting training images, remember to measure the dimensions of the fruit&veg models and update your [target_dimensions_dict](TargetPoseEst.py#L38), which you'll need for estimating the target map in week 6.
-
-### 1.1 Collecting training images with your PenguinPi robot
-To take images with the PenguinPi robot, first you need to run the [operate.py](operate.py) script. Then, press  ```i``` 
-to take a picture with the PenguinPi robot and the image will be saved to the ```pibot_dataset``` folder. Our main goal 
-is to collect images of the fruits and vegs in different orientations, light conditions and backgrounds. The more variety
-you have in your dataset, the more robust your model will be.
-
-To simplify the data collection process (instead of manually taking 1000+ images), one approach is to do the following steps:
-1. Take a small collections of photos of each fruit and veggie at different orientations with simple backgrounds (e.g. a white sheet of paper)
-
-![pumpkin raw image](Screenshots/pumpkin_raw_image.png)
-
-2. Remove the photo background using [this tool](https://www.remove.bg/) or other software of your choice
-
-![pumpkin no background](Screenshots/pumpkin_no_bg.png)
-
-3. Take a collections of background images of the lab with the robot, or download some random images online
-4. Use the [image background randomiser](image_background_randomiser/image_generator.py) script provided to you to generate a large number of images with random backgrounds
-
-### 1.2 Annotating your dataset
-To annotate your dataset, we recommend using [Roboflow](https://roboflow.com/) as it is free to use. You can upload your 
-images and annotate them using the web interface. You can then export the annotations in YOLO format. However, there are 
-many other free annotation tools available online, feel free to use any tool you like.
-
-#### Annotation tips:
-- Make sure your bounding boxes are **tight** around the object, as shown in the example below
-![roboflow_annotation](Screenshots/roboflow_annotation.png)
-- Roboflow has the [assisted labelling](https://blog.roboflow.com/announcing-label-assist/) feature which can speed up the annotation process. You may start with labelling ~30 image per class manually, then train a model and use the assisted labelling feature to label the rest of the images.
-
-### 1.3 Generating dataset on Roboflow
-After you have annotated your dataset, you can use Roboflow to generate a dataset in YOLO format. 
-
-Roboflow also provide option to augment your dataset, which can help improve the robustness of your model.
-Have a think about what augmentations are meaningful for our use case, you may add as many augmentations as you like.
-
-![roboflow_generate_dataset](Screenshots/roboflow_generate_dataset.png)
-
-[NOTE] Please check the aspect ratio of your training images collected by your robot shown in [image properties](lab_output/pred_0.png) and update the image size from [TargetPoseEst.py](TargetPoseEst.py#L54) and [detector.py](YOLO/detector.py#L69) if needed.
-
-[NOTE] Please remember to include some images for validation and test in your dataset split so the training notebook doesn't return an error.
+![M3 prac arena](M3_prac_map_layout.png)
 
 ---
-## Step 2: Training your YOLO model (week 5)
 
-See [YOLOv8_training_notebook.ipynb](YOLOv8_training_notebook.ipynb) for how to train your YOLO with the annotated dataset (you can run this notebook on Google Colab or in your local notebook env).
+## Waypoint navigation (Week 8)
+As a starting point to complete the M3 task, you will need to develop a module to accept a list of waypoints as input to navigate the robot to the goal position. **You are not allowed to teleoperate the robot.** If you wish to demonstrate this component alone, you may manually enter the target waypoints. Otherwise, this module will take the output of the [path planning module](#path-planning-with-a-known-map-week-9) as input. 
 
-An [example trained YOLO detector](YOLO/) is provided, which can recognise three types of fruit&veg with room for performance improvements. Replace the [example detector model](YOLO/model/yolov8_model.pt) with your own trained model.
+**Key functions to complete in [auto_fruit_search.py](auto_fruit_search.py):**
+1. Control the robot to drive towards a waypoint at [line 108-124](auto_fruit_search.py#L108)
+2. Estimate the robot's pose at [line 130-136](auto_fruit_search.py#L130)
+	- We strongly recommend you to use your SLAM code from M1 to estimate the robot's pose. If you choose to do so, you will have to copy the necessary SLAM related functions in [operate.py](../Week02-04/operate.py) and the [slam scripts](../Week02-04/slam) from M1
 
-[NOTE] This example detector was trained using a total of 1000 images (around 100 manually annotated), with 4 photos taken by the robot on each of the three types of targets from different viewing angles and the rest of the image generated by randomising the background. The fruits and vegetables used in the lab may be different from this example.
-
-You'll need to demonstrate your trained detector model with a set of given marking images as part of the M2 live demo marking.
-
-![YOLO detector output](Screenshots/sample_yolo_detector.png)
+**Additional suggestions:**
+- Although it is possible to estimate the robot's pose with odometry (a much simpler implementation), we **STRONGLY RECOMMEND** you to correct the robot's pose after every waypoint navigation step with information from the SLAM module (M1)
+- If you wish to demonstrate this component alone, you may implement one of the following to assist you with the demo
+	- *Command line waypoint input*: a command line interface to continuously take waypoints as inputs so that you can guide the robot to get to the goal manually 
+	- *GUI waypoint input*: a visual-based waypoints selector (with OpenCV or Pygame), so that you can visually select where the robot should go instead of estimating numerical values of the goal coordinates. However this will require more work 
+	- *GUI target visualisation*: a visualisation to show the sequence of targets the robot needs to navigate to on the map and the 0.25m radius around each target, so that you can specify the waypoints more easily
 
 ---
-## Step 3: Estimating target poses (week 6)
 
-### 3.1 Detecting targets with corresponding robot poses
-To estimate pose of targets, you will need to run the SLAM component (press ENTER to run) while running the target detector, so that the robot's pose is known. 
+## Path planning with a known map (Week 9)
+Once you have completed the waypoint navigation function, you can implement a path planning algorithm to allow the robot to generate a path (a set of waypoints) and autonomously navigate to the goal. 
 
-Every time you want to perform object detection, press ```p``` to run the detector, then press ```n``` to save the robot's current pose estimated by SLAM (as "lab_output/image.txt") and the corresponding observation image (as "lab_output/pred_*.png"). 
+To perform the navigation, your codes should only take the [full groundtruth map](M3_prac_map_full.txt) as its input, where the locations of all the objects (10 ArUco markers and 10 fruits&vegs) in the arena are stored. It is best to have the file path of the map as an input argument for the Python script. **Once the Python script has started, you can enter no more than one command for the robot to start its navigation.** 
 
-After you have collected the detector's outputs for all targets, you may press "s" to save SLAM map (performance of your SLAM will influence the target pose estimation). You can exit the GUI by pressing ESC.
+For this component, we assume the positions of all the objects in the arena are known upfront. The robot only needs to perform the path planning once at the start, but it can correct its path along the way using visual information to estimate if it has gone off-course (you are NOT allowed to manually instruct the robot that it's gone off-course and a re-planning is needed). 
 
-### 3.2 Generating estimated target map from observations
-Run ```python TargetPoseEst.py```, which will read in the observation saved inside lab_output and generate an estimated object map as "lab_output/targets.txt" during a run through the arena to generate an estimated map of all the observed targets.
+You may use any path planning algorithms you prefer, such as rapidly exploring random trees (RRT) or A*, whether they are covered in the workshop or not. While we give you the true maps and shopping list beforehand, **you are NOT allowed to hard-code a list of waypoints or teleoperate the robot**. Your path planning algorithm should be the one navigating your robot around. 
 
-**Modify [TargetPoseEst.py](TargetPoseEst.py)** to estimate the locations of the fruits and vegs based on the detector's outputs and the robot's poses. 
-- You may improve the [estimate_pose function](TargetPoseEst.py#L15) for computing the target pose using the robot's pose, the detector's output, and the target's true dimensions in each image.
-- If your training image is in a different size than the robot's camera size of 320x240 pixels, remember to change [how the x_shift is computed in the estimate_pose_function](TargetPoseEst.py#L54)
-- Replace the [merge_estimation function](TargetPoseEst.py#L69) with your own codes to merge the estimations from multiple observations using filtering or clustering approaches instead of always taking the first estimation of a target type.
-- In the testing arena, the fruits/vegs will be at least 15cm apart, but a fruit/veg may be within 15cm of a marker block.
-- The [TargetPoseEst.py](TargetPoseEst.py) generates an estimation result file as "lab_output/targets.txt", which is then used to be compared against the groundtruth map for computing the target pose estimation errors.
-- **Make sure your modified "TargetPoseEst.py" generates a "targets.txt" file that is in the same format as the [given example output](lab_output/targets.txt)**. Generating the estimation map in a wrong format may resulting in it not being compatible with the evaluation scripts and thus getting 0pt for the [M2 target_est_score](M2_marking.md#evaluation).
+---
+
+## Path planning with a partially known map (Week 9)
+In this component, 5 obstacle fruits&vegs at locations unknown to the robot is present in the arena in addition to the 5 target fruits&vegs that the robot needs to navigate to. 
+
+To perform the navigation, your codes should only take the [partially known groundtruth map](M3_prac_map_part.txt), where the locations of some of the objects (10 ArUco markers and 5 target fruits&vegs) in the arena are stored as input. **Once the Python script has started, you can enter no more than one command for the robot to start its task. You are not allowed to hard-code the waypoints or teleoperate the robot.**
+
+Building on top of the components described above, you will need to include
+1. A grocery detector (implemented in M2) to detect and estimate the location of the 5 obstacles, whose locations are initially unknown to the robot
+2. Re-plan the robot's trajectory once an obstacle (new object) has been detected
+
+## Path planning with a minimal map (Week 9)
+In this component, the robot does not know any of the fruits&veg locations, including the target fruits&veg. The robot is expected to explore the arena to find the target fruits&veg, and to stop within the specified radius of the targets at any given order. The intended target it is stopping at needs to be displayed on the GUI.
+
+To perform the navigation, your codes should only take the [minimally known groundtruth map](M3_prac_map_min.txt), where the locations of some of the objects (10 ArUco markers) in the arena are stored as input. **Once the Python script has started, you can enter no more than one command for the robot to start its task. You are not allowed to hard-code the waypoints or teleoperate the robot.**
+
+To build on all the previous levels, you will need to include:
+1. A plan to explore spaces in the arena with some known map of the ArUcos
+2. Re-plan the robot's trajectory once new fruits&vegs are detected (both obstacles and targets)
