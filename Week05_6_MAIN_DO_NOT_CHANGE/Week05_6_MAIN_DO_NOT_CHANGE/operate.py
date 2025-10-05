@@ -42,8 +42,8 @@ NAV_CONFIG = {
     "goal_wait_seconds": 2.5,                 # [s] how long to stop at each goal before continuing
 
     # --- Motion command magnitudes (normalized: -1.0 to +1.0) ---
-    "fwd_speed": 0.3,                         # forward driving speed
-    "turn_speed": 0.3,                        # turning speed
+    "fwd_speed": 0.6,                         # forward driving speed
+    "turn_speed": 0.6,                        # turning speed
 
     # --- Path replanning (safety mechanism) ---
     "path_replan": False,                     # enable/disable automatic replanning when drift is large
@@ -91,7 +91,7 @@ class Operate:
 
         self.command = {
             'motion': [0, 0],
-            'inference': False,
+            'inference': True,
             'output': False,
             'save_inference': False,
             'save_image': False
